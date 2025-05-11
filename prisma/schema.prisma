@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "./node_modules/@prisma/client"
 }
 
 datasource db {
@@ -56,8 +55,8 @@ model VerificationToken {
 }
 
 model ScanResult {
-  id              String      @id @default(cuid())
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId          String
   images          String[]
   hasDisease      Boolean
@@ -69,5 +68,5 @@ model ScanResult {
   symptoms        String[]
   treatment       String[]
   recommendations Json
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime @default(now())
 }
