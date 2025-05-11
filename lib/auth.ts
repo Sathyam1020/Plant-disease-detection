@@ -59,15 +59,5 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
-  cookies: {
-    sessionToken: {
-      name: `next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Ensures cookies are secure only in production
-        sameSite: 'lax',
-        domain: '.https://plant-disease-detection-ebon.vercel.app', // Optional: ensure this is set for your domain/subdomain
-      },
-    },
-  },
+
 };
