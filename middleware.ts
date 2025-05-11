@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export default async function middleware(request: NextRequest) {
-  const isAuthenticated = request.cookies.has("next-auth.session-token");
+  const isAuthenticated =
+      request.cookies.has("next-auth.session-token") ||
+      request.cookies.has("__Secure-next-auth.session-token");
   const isRootPath = request.nextUrl.pathname === "/";
   const isAuthPage = request.nextUrl.pathname.startsWith("/auth/");
 
