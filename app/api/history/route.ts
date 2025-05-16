@@ -39,8 +39,8 @@ export async function GET() {
       orderBy: {
         createdAt: 'desc',
       },
-      take: 10, // Optional pagination
-      skip: 0,  // Optional pagination logic
+      take: 10,
+      skip: 0,
     });
 
     return NextResponse.json(history);
