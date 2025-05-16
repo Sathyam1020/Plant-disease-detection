@@ -1,95 +1,144 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import cloudinary from '@/lib/cloudinary';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return buffer.toString('base64');
+}
 
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const email = session.user.email;
+
+    // Ensure user exists
+    let dbUser = await prisma.user.findUnique({ where: { email } });
+    if (!dbUser) {
+      dbUser = await prisma.user.create({
+        data: {
+          email,
+          name: session.user.name || null,
+          image: session.user.image || null,
+        },
+      });
     }
 
     const formData = await request.formData();
-    const image = formData.get('image') as File;
+    const images = formData.getAll('images') as File[];
 
-    if (!image) {
-      return NextResponse.json(
-        { error: 'No image provided' },
-        { status: 400 }
-      );
+    if (!images || images.length === 0) {
+      return NextResponse.json({ error: 'No images provided' }, { status: 400 });
     }
 
-    // Convert image to base64
-    const bytes = await image.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64Image = buffer.toString('base64');
+    // Use only the first image (Gemini limitation)
+    const base64Image = await fileToBase64(images[0]);
 
-    // Call OpenAI API for analysis
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Analyze this plant image for diseases. Provide a detailed response including: 1) The disease name (if any), 2) Confidence level (0-1), 3) Description of the disease, 4) Treatment steps, and 5) Prevention tips. If the plant appears healthy, indicate that and provide general care tips."
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${image.type};base64,${base64Image}`
-              }
-            }
-          ]
-        }
-      ],
-      max_tokens: 1000
+    // Analyze with Gemini
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: 'image/jpeg', // Adjust if needed
+          data: base64Image,
+        },
+      },
+      {
+        text: `Please Carefully analyze the plant image and give a comprehensive diagnosis of the plant’s health. Respond ONLY with a raw JSON object with this structure:
+
+{
+  hasDisease: boolean,
+  diseaseName?: string,
+  plantType: string,
+  confidence: number, in percentage
+  description?: string,
+  causes?: string[],
+  symptoms?: string[],
+  treatment?: string[],
+  recommendations: {
+    nextSteps?: string[],
+    preventiveTips?: string[],
+    routineCareTips?: string[]
+  },
+  timestamp: string
+}`,
+      },
+    ]);
+
+    const geminiResponse = await result.response;
+    const rawContent = geminiResponse.text();
+    console.log("Gemini raw output:", rawContent);
+
+    const cleanJson = rawContent?.replace(/```(?:json)?\s*([\s\S]*?)\s*```/, '$1');
+    const consolidatedAnalysis = JSON.parse(cleanJson || '{}');
+
+    // Upload all images to Cloudinary (optional but useful for DB storage)
+    const uploadPromises = images.map(async (image) => {
+      const bytes = await image.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+
+      return new Promise<{ secure_url: string }>((resolve, reject) => {
+        cloudinary.uploader
+          .upload_stream({ resource_type: 'image' }, (error: any, result: any) => {
+            if (error || !result) reject(error);
+            else resolve(result as any);
+          })
+          .end(buffer);
+      });
     });
 
-    // Parse the response
-    const analysis = response.choices[0].message.content;
-    if (!analysis) {
-      throw new Error('No analysis received from OpenAI');
-    }
+    const uploadResults = await Promise.all(uploadPromises);
+    const imageUrls = uploadResults.map(result => result.secure_url);
 
-    // Extract information from the analysis
-    const diseaseMatch = analysis.match(/Disease:\s*([^\n]+)/i);
-    const confidenceMatch = analysis.match(/Confidence:\s*([0-9.]+)/i);
-    const descriptionMatch = analysis.match(/Description:\s*([^\n]+)/i);
-    const treatmentMatch = analysis.match(/Treatment:\s*([\s\S]+?)(?=Prevention:|$)/i);
-    const preventionMatch = analysis.match(/Prevention:\s*([\s\S]+?)(?=$)/i);
+    const scanResult = await prisma.scanResult.create({
+      data: {
+        userId: dbUser.id,
+        hasDisease: consolidatedAnalysis.hasDisease,
+        diseaseName: consolidatedAnalysis.diseaseName || null,
+        plantType: consolidatedAnalysis.plantType,
+        confidence: consolidatedAnalysis.confidence,
+        description: consolidatedAnalysis.description || null,
+        causes: consolidatedAnalysis.causes || [],
+        symptoms: consolidatedAnalysis.symptoms || [],
+        treatment: consolidatedAnalysis.treatment || [],
+        recommendations: consolidatedAnalysis.recommendations || {},
+        images: imageUrls,
+      },
+    });
 
-    const result = {
-      disease: diseaseMatch ? diseaseMatch[1].trim() : 'Healthy',
-      confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 1.0,
-      description: descriptionMatch ? descriptionMatch[1].trim() : 'Plant appears healthy',
-      treatment: treatmentMatch
-        ? treatmentMatch[1].split('\n')
-            .map(step => step.trim())
-            .filter(step => step && !step.startsWith('-'))
-        : ['No treatment needed'],
-      prevention: preventionMatch
-        ? preventionMatch[1].split('\n')
-            .map(step => step.trim())
-            .filter(step => step && !step.startsWith('-'))
-        : ['Continue regular plant care'],
-      image: `data:${image.type};base64,${base64Image}`
-    };
+    return NextResponse.json({
+      id: scanResult.id,
+      hasDisease: scanResult.hasDisease,
+      diseaseName: scanResult.diseaseName,
+      plantType: scanResult.plantType,
+      confidence: scanResult.confidence,
+      description: scanResult.description,
+      causes: scanResult.causes,
+      symptoms: scanResult.symptoms,
+      treatment: scanResult.treatment,
+      recommendations: scanResult.recommendations,
+      images: scanResult.images,
+      createdAt: scanResult.createdAt,
+    });
 
-    return NextResponse.json(result);
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('Gemini Error:', error);
     return NextResponse.json(
-      { error: 'Failed to analyze image' },
+      {
+        error: 'Failed to analyze image with Gemini',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }

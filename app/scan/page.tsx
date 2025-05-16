@@ -72,8 +72,8 @@ export default function ScanPage() {
         formData.append('images', image.file);
       });
 
-      console.log('Sending request to /api/scan');
-      const response = await fetch('/api/scan', {
+      console.log('Sending request to /api/analyze');
+      const response = await fetch('/api/analyze', {
         method: 'POST',
         body: formData,
       });

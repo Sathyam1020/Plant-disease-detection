@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Container } from "../layout/Container";
+import Link from "next/link";
 
 
 export function Hero() {
@@ -19,7 +20,7 @@ export function Hero() {
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Button size="lg" className="bg-primary hover:bg-primary/90">
-                Scan Your Plant Now
+                <Link href="/auth/signin">Scan your plant now</Link>
               </Button>
               <Button size="lg" variant="outline" className="border-primary text-primary hover:bg-primary/10">
                 Learn How It Works

@@ -62,40 +62,46 @@ export async function POST(request: Request) {
 
     // Send all image URLs to OpenAI for analysis
     const analysisResponse = await openai.chat.completions.create({
-      model: "gpt-4-turbo",
+      model: "gpt-3.5-turbo",
       messages: [
         {
           role: "user",
-          content: `Please analyze the provided plant images and give a single comprehensive analysis of the plant health based on all images combined.
-            If any disease or health issues are found, provide detailed information about the disease, including its name, causes, symptoms, and suggested treatments.
-            If no disease is found, provide a clear explanation of the plant's current healthy state and general care recommendations.
-            Respond ONLY with a raw JSON object. Do NOT include markdown code block formatting.
-            The structure should be:
-            {
-              hasDisease: boolean,
-              diseaseName?: string,
-              plantType: string,
-              confidence: number,
-              description?: string,
-              causes?: string[],
-              symptoms?: string[],
-              treatment?: string[],
-              recommendations: {
-                nextSteps?: string[],
-                preventiveTips?: string[],
-                routineCareTips?: string[]
-              },
-              timestamp: string
-            }`
+          content: `Please Carefully analyze all the provided plant images together and give a single comprehensive diagnosis of the plant’s overall health. Take your time to thoroughly observe leaf color, texture, patterns, spots, and any other visible indicators. Do not generalize or guess—base your findings strictly on visual evidence from the images.
+
+If a disease or health issue is found, respond with accurate, specific details including the disease name, its causes, visible symptoms, and treatment methods. If no disease is detected, explain clearly why the plant appears healthy and include helpful care recommendations.
+
+Respond ONLY with a raw JSON object. Do NOT include markdown or extra explanation.
+
+Use this exact structure:
+
+{
+  hasDisease: boolean,
+  diseaseName?: string,
+  plantType: string,
+  confidence: number, // in percentage (e.g., 92.5)
+  description?: string,
+  causes?: string[],
+  symptoms?: string[],
+  treatment?: string[],
+  recommendations: {
+    nextSteps?: string[],
+    preventiveTips?: string[],
+    routineCareTips?: string[]
+  },
+  timestamp: string
+}
+
+Be thorough, precise, and do not repeat generic names or templates across different plants.`
         },
         {
           role: "system",
-          content: `Analyze the following images for plant health and disease information:
-                    ${imageUrls.join(', ')}`
+          content: `Analyze the following plant images carefully for health and disease signs:
+${imageUrls.join(', ')}`
         }
       ],
-      max_tokens: 1000,
+      max_tokens: 2048,
     });
+
 
     const content = analysisResponse.choices[0].message.content;
 
