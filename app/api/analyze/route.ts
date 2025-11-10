@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const base64Image = await fileToBase64(images[0]);
 
     // Analyze with Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const result = await model.generateContent([
       {
